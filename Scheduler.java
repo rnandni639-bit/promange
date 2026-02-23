@@ -1,30 +1,36 @@
-package com.promanage.service;
+package scheduler;
 
-import com.promanage.model.Project;
-import java.util.*;
+import model.Project;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 
-public class Scheduler {
+public class GreedyScheduler {
 
-    public static Map<Integer, Project> scheduleProjects(List<Project> projects) {
-        projects.sort((a, b) -> Double.compare(b.getRevenue(), a.getRevenue()));
-        Project[] week = new Project[5];
+    public List<Project> scheduleProjects(List<Project> projects) {
+
+        // Step 1: Sort by predicted revenue (highest first)
+        projects.sort((p1, p2) ->
+                Double.compare(p2.getPredictedRevenue(), p1.getPredictedRevenue())
+        );
+
+        List<Project> scheduled = new ArrayList<>();
+        boolean[] slots = new boolean[5]; // 5 days (Mon-Fri)
 
         for (Project project : projects) {
-            int deadline = project.getDeadline();
-            for (int day = Math.min(deadline, 5) - 1; day >= 0; day--) {
-                if (week[day] == null) {
-                    week[day] = project;
+
+            // Try to schedule before deadline
+            for (int d = Math.min(5, project.getDeadline()) - 1; d >= 0; d--) {
+
+                if (!slots[d]) {
+                    slots[d] = true;
+                    scheduled.add(project);
                     break;
                 }
             }
         }
 
-        Map<Integer, Project> schedule = new HashMap<>();
-        for (int i = 0; i < 5; i++) {
-            if (week[i] != null) {
-                schedule.put(i + 1, week[i]);
-            }
-        }
-        return schedule;
+        return scheduled;
     }
 }
