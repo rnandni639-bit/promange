@@ -1,140 +1,120 @@
-import java.sql.*;
-import java.util.*;
+import dao.ProjectDAO;
+import model.Project;
+import scheduler.GreedyScheduler;
+import ml.MLModel;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
 
 public class Main {
 
-    static Scanner sc = new Scanner(System.in);
+    private static final String URL = "jdbc:postgresql://localhost:5432/project_scheduling_db";
+    private static final String USER = "postgres";
+    private static final String PASSWORD = "tripti@123";
 
-    public static int getIntInput(String msg) {
-        System.out.print(msg);
-        while (!sc.hasNextInt()) {
-            System.out.println("Invalid input! Please enter numbers only.");
-            sc.next();
-            System.out.print(msg);
-        }
-        int num = sc.nextInt();
-        sc.nextLine();
-        return num;
-    }
     public static void main(String[] args) {
 
-        while (true) {
+        try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD)) {
 
-            System.out.println("\n==== ProManage Solutions ====");
-            System.out.println("1. Add Project");
-            System.out.println("2. View Projects");
-            System.out.println("3. Generate Weekly Schedule");
-            System.out.println("4. Exit");
+            Scanner scanner = new Scanner(System.in);
+            ProjectDAO projectDAO = new ProjectDAO(connection);
+            GreedyScheduler scheduler = new GreedyScheduler();
+            MLModel model = new MLModel();
 
-            int choice = getIntInput("Enter choice: ");
+            while (true) {
 
-            switch (choice) {
+                System.out.println("\n==== Project Scheduling System ====");
+                System.out.println("1. Add Project");
+                System.out.println("2. View All Projects");
+                System.out.println("3. Generate Weekly Schedule");
+                System.out.println("4. Exit");
+                System.out.print("Choose option: ");
 
-                case 1:
-                    addProject();
-                    break;
+                int choice = scanner.nextInt();
+                scanner.nextLine();
 
-                case 2:
-                    viewProjects();
-                    break;
+                switch (choice) {
 
-                case 3:
-                    generateSchedule();
-                    break;
+                    case 1:
+                        System.out.print("Enter Project Title: ");
+                        String title = scanner.nextLine();
 
-                case 4:
-                    System.out.println("Exiting...");
-                    System.exit(0);
-                    break;
+                        System.out.print("Enter Deadline (1-5 days): ");
+                        int deadline = scanner.nextInt();
 
-                default:
-                    System.out.println("Invalid choice!");
+                        System.out.print("Enter Revenue: ");
+                        double revenue = scanner.nextDouble();
+
+                        // Get past revenues for prediction
+                        List<Project> allProjects = projectDAO.getAllProjects();
+                        List<Double> pastRevenues = new ArrayList<>();
+
+                        for (Project p : allProjects) {
+                            pastRevenues.add(p.getRevenue());
+                        }
+
+                        double predictedRevenue = model.predictRevenue(pastRevenues);
+
+                        Project project = new Project();
+                        project.setTitle(title);
+                        project.setDeadline(deadline);
+                        project.setRevenue(revenue);
+                        project.setPredictedRevenue(predictedRevenue);
+                        project.setStatus("PENDING");
+
+                        projectDAO.addProject(project);
+
+                        System.out.println("Project Added Successfully!");
+                        break;
+
+                    case 2:
+                        List<Project> projects = projectDAO.getAllProjects();
+
+                        System.out.println("\n--- All Projects ---");
+                        for (Project p : projects) {
+                            System.out.println(
+                                    "ID: " + p.getId() +
+                                            ", Title: " + p.getTitle() +
+                                            ", Deadline: " + p.getDeadline() +
+                                            ", Revenue: " + p.getRevenue() +
+                                            ", Predicted: " + p.getPredictedRevenue() +
+                                            ", Status: " + p.getStatus()
+                            );
+                        }
+                        break;
+
+                    case 3:
+                        List<Project> pendingProjects = projectDAO.getPendingProjects();
+
+                        List<Project> scheduled = scheduler.scheduleProjects(pendingProjects);
+
+                        System.out.println("\n--- Weekly Schedule ---");
+
+                        int day = 1;
+                        for (Project p : scheduled) {
+                            System.out.println("Day " + day + ": " + p.getTitle());
+                            p.setStatus("SCHEDULED");
+                            projectDAO.updateProjectStatus(p.getId(), "SCHEDULED");
+                            day++;
+                        }
+
+                        System.out.println("Scheduling Completed!");
+                        break;
+
+                    case 4:
+                        System.out.println("Exiting...");
+                        System.exit(0);
+
+                    default:
+                        System.out.println("Invalid Choice!");
+                }
             }
-        }
-    }
-    public static void addProject() {
-
-        try {
-            Connection con = DBConnection.getConnection();
-
-            System.out.print("Enter Project Title: ");
-            String title = sc.nextLine();
-
-            int deadline = getIntInput("Enter Deadline (1-5 days): ");
-            int revenue = getIntInput("Enter Revenue: ");
-
-            if (deadline < 1 || deadline > 5) {
-                System.out.println("❌ Deadline must be between 1 and 5!");
-                return;
-            }
-
-            String sql =
-                    "INSERT INTO projects(title, deadline, revenue) VALUES (?, ?, ?)";
-
-            PreparedStatement ps = con.prepareStatement(sql);
-            ps.setString(1, title);
-            ps.setInt(2, deadline);
-            ps.setInt(3, revenue);
-
-            ps.executeUpdate();
-
-            System.out.println("✅ Project Added Successfully!");
-
-            con.close();
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-    public static void viewProjects() {
-
-        try {
-            Connection con = DBConnection.getConnection();
-            Statement st = con.createStatement();
-            ResultSet rs = st.executeQuery("SELECT * FROM projects");
-
-            System.out.println("\nID | Title | Deadline | Revenue");
-
-            while (rs.next()) {
-                System.out.println(
-                        rs.getInt("id") + " | " +
-                                rs.getString("title") + " | " +
-                                rs.getInt("deadline") + " | " +
-                                rs.getInt("revenue")
-                );
-            }
-
-            con.close();
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-    public static void generateSchedule() {
-
-        try {
-            Connection con = DBConnection.getConnection();
-            Statement st = con.createStatement();
-            ResultSet rs = st.executeQuery("SELECT * FROM projects");
-
-            List<Project> list = new ArrayList<>();
-
-            while (rs.next()) {
-                list.add(new Project(
-                        rs.getInt("id"),
-                        rs.getString("title"),
-                        rs.getInt("deadline"),
-                        rs.getInt("revenue")
-                ));
-            }
-
-            Scheduler.scheduleProjects(list);
-
-            con.close();
 
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 }
-
